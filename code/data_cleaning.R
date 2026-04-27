@@ -115,3 +115,4 @@ data_instq_long <- data_instq %>%
 data_instq_long <- data_instq_long %>%
 mutate(year = as.numeric(str_extract(year, "\\d{4}")))
 View(data_instq_long)
+
