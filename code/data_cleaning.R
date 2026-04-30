@@ -219,4 +219,68 @@ combined <- combined %>%
 combined <- combined %>%
   select(-`Last Updated: 04/08/2026.x`, -`Last Updated: 04/08/2026.y`, -`Last Updated: 04/08/2026.x.x`, -`Last Updated: 04/08/2026.y.y`)
 
+#reconstructing the oil balances
+#we download the oil quantities data from Our World in Data
+production_url <- "https://ourworldindata.org/grapher/oil-production-by-country.csv"
+consumption_url <- "https://ourworldindata.org/grapher/oil-consumption-by-country.csv"
+library(tidyverse)
+library(countrycode)
+#we load the data
+prod <- read_csv("https://ourworldindata.org/grapher/oil-production-by-country.csv")
+cons <- read_csv("https://ourworldindata.org/grapher/oil-consumption-by-country.csv")
+View(prod)
+View(cons)
+names(prod)
+names(cons)
+prod <- prod %>%
+  rename(production = Oil)
+cons <- cons %>%
+  rename(consumption = Oil)
+#we merge production and consumption
+oil <- prod %>%
+ select(Entity, Code, Year, production) %>%
+ full_join(
+  cons %>% select(Entity, Code, Year, consumption),
+  by = c("Entity", "Code", "Year")
+ )
+#we approximate net exports by computing production - consumption
+oil <- oil %>%
+ mutate(net_oil = production - consumption)
+View(oil)
+#we convert to value
+price <- read_csv("https://raw.githubusercontent.com/datasets/oil-prices/master/data/brent-daily.csv")
+library(dplyr)
+library(lubridate)
+price <- price %>%
+ mutate(Year = year(as.Date(Date))) %>%
+ group_by(Year) %>%
+ summarise(oil_price_usd_per_barrel = mean(Price, na.rm = TRUE))
+oil <- oil %>%
+ left_join(price, by = "Year") %>%
+ mutate(
+  net_oil_barrels = net_oil * 0.172 * 1e6,
+  oil_balance_value = net_oil_barrels * oil_price_usd_per_barrel
+ )
+names(combined)
+names(oil)
+oil <- oil %>%
+ rename(code = Code, year = Year)
+combined <- combined %>%
+ rename(code = code, year = year)
 
+combined <- combined %>%
+ left_join(
+  oil %>% select(code, year, oil_balance_value),
+  by = c("code", "year")
+ )
+combined %>% 
+ select(oil_balance_value.x, oil_balance_value.y) %>%
+ summary() 
+#they are identical
+combined <- combined %>% 
+mutate(oil_balance_value = oil_balance_value.y) %>%
+select(-oil_balance_value.x, -oil_balance_value.y) 
+combined <- combined %>% 
+  mutate(oil_balance_gdp = oil_balance_value / GDP_current )
+summary(combined$oil_balance_gdp)
+view(combined)
