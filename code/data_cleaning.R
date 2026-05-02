@@ -2,8 +2,9 @@ library(dplyr)
 library(tidyr)
 library(stringr)
 library(purrr)
+library(readxl)
 
-##Restructing the 
+##Restructing the data
 wb <- read.csv("data/raw/WB_extract_2704.csv", header = TRUE, check.names = FALSE)
 View(wb)
 wb_long <- wb %>%
@@ -284,3 +285,52 @@ combined <- combined %>%
   mutate(oil_balance_gdp = oil_balance_value / GDP_current )
 summary(combined$oil_balance_gdp)
 view(combined)
+
+##Creating the financial index
+
+#merging the dataset for the banking crisis
+major <- read_excel("data/raw/SystemicMajor.xlsx")
+border <- read_excel("data/raw/SystemicBorderline.xlsx")
+combined_2 <- read.csv("data/processed/combined_2.csv", check.names=FALSE)
+
+#matching the column names
+major <- major %>% rename(country = Country, year=Year)
+border <- border %>% rename(country = Country, year=Year)
+major <- major %>% mutate(year=as.numeric(year))
+border <- border %>% mutate(year=as.numeric(year))
+combined_2 <- combined_2 %>% mutate(year=as.numeric(year))
+
+#merging again
+crisis <- full_join(major, border, by = c("country", "year"))
+combined_3 <- combined_2 %>% left_join(crisis, by = c("country", "year"))
+write.csv(combined_3, "data/processed/combined_3.csv", row.names = FALSE)
+
+#merging the dummy variable as one instead of .x, .y
+combined_3 <- combined_3 %>%
+ mutate(
+  dummy = as.numeric((Dummy.x == 1)|(Dummy.y == 1))
+ ) %>%
+ select(-Dummy.x, -Dummy.y)
+
+#constructing the index
+#step 1: computing total sample GDP and weighted GDP
+sample <- combined_3 %>% 
+ semi_join(crisis, by = c("country", "year")) %>%
+ left_join(crisis, by = c("country", "year")) %>%
+ group_by(year) %>%
+ summarise(
+  sample_GDP = sum(GDP_current, na.rm = TRUE), 
+  crisis_GDP = sum(GDP_current * dummy, na.rm = TRUE),
+  weighted_GDP = crisis_GDP/sample_GDP,
+  .groups = "drop")
+
+#step 2: the Financial Crisis Index (FCI)
+combined_3 <- combined_3 %>%
+ left_join(crisis, by = c("country", "year")) %>%
+ left_join(sample %>% select(year, weighted_GDP), by = "year") %>%
+ mutate(FCI = dummy - weighted_GDP)
+
+#checks 
+View(combined_3)
+summary(combined_3$FCI)
+summary(combined_3$dummy)
