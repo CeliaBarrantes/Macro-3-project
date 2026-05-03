@@ -3,6 +3,10 @@ library(tidyr)
 library(stringr)
 library(purrr)
 library(readxl)
+library(tidyverse)
+library(countrycode)
+library(lubridate)
+library(zoo)
 
 ##Restructing the data
 wb <- read.csv("data/raw/WB_extract_2704.csv", header = TRUE, check.names = FALSE)
@@ -207,12 +211,84 @@ data_instq_wide <- data_instq_long %>%
   )
 View(data_instq_wide)
 
+
+fiscal_b <- read.csv("data/raw/FiscalBalance_54countries.csv", header = TRUE, check.names = FALSE)
+View(fiscal_b)
+names(fiscal_b)
+data_fb_long <- fiscal_b %>%
+  rename(
+    country = COUNTRY
+  ) %>%
+  
+  pivot_longer(
+    cols = matches("^\\d{4}$"),
+    names_to = "year",
+    values_to = "value"
+  ) %>%
+  
+  # CRITICAL FIX: force character BEFORE cleaning
+  mutate(
+    year = as.numeric(year),
+    value = as.character(value)
+  )
+data_fb_long <- data_fb_long %>%
+  mutate(
+    value = na_if(value, ".."),
+    value = as.numeric(gsub(",", "", value))
+  )%>%
+  mutate(
+    variable = "Fiscal balance (% of GDP)",
+    variable_code = DATASET
+  ) %>%
+  mutate(
+    country_code = countrycode(
+      country,
+      origin = "country.name",
+      destination = "iso3c",
+      custom_match = c(
+        "Hong Kong Special Administrative Region, People's Republic of China" = "HKG"
+      )
+    )
+  ) %>%
+  filter(!is.na(country), country != "")
+data_fb_long <- data_fb_long %>%
+  transmute(
+    country,
+    country_code,
+    variable,
+    variable_code,
+    year,
+    value
+  ) %>%
+  filter(!is.na(country), country != "")
+data_fb_wide <- data_fb_long %>%
+  select(-variable_code) %>%
+  pivot_wider(
+    names_from = variable,
+    values_from = value,
+    values_fn = mean,
+    values_fill = NA
+  )
+View(data_fb_wide)
+data_fb_wide <- data_fb_wide %>%
+  rename(
+    fiscal_balance = `Fiscal balance (% of GDP)`
+  )
+
 ##Merge the data
-list(wb_wide, data_er_wide, data_demo_wide, data_nfa_wide, data_instq_wide) %>%
-  lapply(is.null)
-combined <- reduce(list(wb_wide, data_er_wide, data_demo_wide, data_nfa_wide, data_instq_wide),
-                  full_join,
-                  by = c("country", "country_code", "year"))
+combined <- reduce(
+  list(
+    wb_wide,
+    data_er_wide,
+    data_demo_wide,
+    data_nfa_wide,
+    data_instq_wide,
+    data_fb_wide
+  ),
+  full_join,
+  by = c("country", "country_code", "year")
+)
+
 View(combined)
 
 combined <- combined %>%
@@ -224,8 +300,7 @@ combined <- combined %>%
 #we download the oil quantities data from Our World in Data
 production_url <- "https://ourworldindata.org/grapher/oil-production-by-country.csv"
 consumption_url <- "https://ourworldindata.org/grapher/oil-consumption-by-country.csv"
-library(tidyverse)
-library(countrycode)
+
 #we load the data
 prod <- read_csv("https://ourworldindata.org/grapher/oil-production-by-country.csv")
 cons <- read_csv("https://ourworldindata.org/grapher/oil-consumption-by-country.csv")
@@ -250,8 +325,6 @@ oil <- oil %>%
 View(oil)
 #we convert to value
 price <- read_csv("https://raw.githubusercontent.com/datasets/oil-prices/master/data/brent-daily.csv")
-library(dplyr)
-library(lubridate)
 price <- price %>%
  mutate(Year = year(as.Date(Date))) %>%
  group_by(Year) %>%
@@ -267,7 +340,7 @@ names(oil)
 oil <- oil %>%
  rename(code = Code, year = Year)
 combined <- combined %>%
- rename(code = code, year = year)
+ rename(code = country_code, year = year)
 
 combined <- combined %>%
  left_join(
@@ -282,7 +355,7 @@ combined <- combined %>%
 mutate(oil_balance_value = oil_balance_value.y) %>%
 select(-oil_balance_value.x, -oil_balance_value.y) 
 combined <- combined %>% 
-  mutate(oil_balance_gdp = oil_balance_value / GDP_current )
+  mutate(oil_balance_gdp = oil_balance_value / GDP_current ) #in the paper we use oil balance wrt gdp
 summary(combined$oil_balance_gdp)
 view(combined)
 
@@ -291,18 +364,17 @@ view(combined)
 #merging the dataset for the banking crisis
 major <- read_excel("data/raw/SystemicMajor.xlsx")
 border <- read_excel("data/raw/SystemicBorderline.xlsx")
-combined_2 <- read.csv("data/processed/combined_2.csv", check.names=FALSE)
 
 #matching the column names
 major <- major %>% rename(country = Country, year=Year)
 border <- border %>% rename(country = Country, year=Year)
 major <- major %>% mutate(year=as.numeric(year))
 border <- border %>% mutate(year=as.numeric(year))
-combined_2 <- combined_2 %>% mutate(year=as.numeric(year))
+combined <- combined %>% mutate(year=as.numeric(year))
 
 #merging again
 crisis <- full_join(major, border, by = c("country", "year"))
-combined_3 <- combined_2 %>% left_join(crisis, by = c("country", "year"))
+combined_3 <- combined %>% left_join(crisis, by = c("country", "year"))
 write.csv(combined_3, "data/processed/combined_3.csv", row.names = FALSE)
 
 #merging the dummy variable as one instead of .x, .y
@@ -334,3 +406,4 @@ combined_3 <- combined_3 %>%
 View(combined_3)
 summary(combined_3$FCI)
 summary(combined_3$dummy)
+write.csv(combined_3, "data/processed/combined_3.csv", row.names = FALSE)
