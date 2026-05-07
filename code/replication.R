@@ -69,10 +69,18 @@ dataset <- dataset %>%
   mutate(growth_pc = log(GDP_pc_const) - log(lag(GDP_pc_const))) %>%
   ungroup()%>%
   group_by(year) %>%
-  mutate(
-    weighted_mean_growth = weighted.mean(growth_pc, GDP_current, na.rm = TRUE),
-    world_fiscal_mean = weighted.mean(fiscal_balance, GDP_current, na.rm = TRUE)
-    ) %>%
+mutate(
+    weighted_mean_growth = weighted.mean(
+      growth_pc[!is.na(growth_pc) & !is.na(GDP_current)],
+      GDP_current[!is.na(growth_pc) & !is.na(GDP_current)]
+    ),
+
+    world_fiscal_mean = weighted.mean(
+      fiscal_balance[!is.na(fiscal_balance) & !is.na(GDP_current)],
+      GDP_current[!is.na(fiscal_balance) & !is.na(GDP_current)]
+    )
+) %>% #we use a safer version of weighted.mean()
+#to avoid issue in the treatment of NAs
   ungroup() %>%
   mutate(
     growth_dev = growth_pc - weighted_mean_growth,
@@ -91,8 +99,16 @@ mutate(
 ungroup()%>%
 group_by(year)%>%
 mutate(
-    world_youth_mean = weighted.mean(Age_dep_young, GDP_current, na.rm = TRUE),
-    world_old_mean   = weighted.mean(Age_dep_old, GDP_current, na.rm = TRUE)
+
+    world_youth_mean = weighted.mean(
+      Age_dep_young[!is.na(Age_dep_young) & !is.na(GDP_current)],
+      GDP_current[!is.na(Age_dep_young) & !is.na(GDP_current)]
+    ),
+
+    world_old_mean = weighted.mean(
+      Age_dep_old[!is.na(Age_dep_old) & !is.na(GDP_current)],
+      GDP_current[!is.na(Age_dep_old) & !is.na(GDP_current)]
+    )
 )%>%
 ungroup()%>%
 mutate(
@@ -146,10 +162,7 @@ data_quality_table <- data_rep %>%
   )
 View(data_quality_table)
 print(data_quality_table)
-#We should now check for other missing variables 
-summary(data_rep$growth_dev_avg)
-sum(is.na(data_rep$growth_dev_avg))
-#we loose around 86obs from this
+#we should now check for the other variables
 data_rep %>%
   summarise(
     total_obs = n(),
@@ -168,7 +181,7 @@ data_rep %>%
         fc_openness
       )
     )
-  )
-#we get 0 complete observations
+  )#we get 0 complete observations (without the later modifications)
 sapply(data_rep, function(x) sum(is.na(x)))
-#we get three broken variables
+#we first get three broken variables: age dep for both young and old, fiscal balance
+#after modification, we are left with only the fiscal balance a bit broken but much less than before)
