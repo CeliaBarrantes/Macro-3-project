@@ -334,3 +334,12 @@ combined_3 <- combined_3 %>%
 View(combined_3)
 summary(combined_3$FCI)
 summary(combined_3$dummy)
+
+#checking issues with the data
+target <- c("Bahrain", "China", "Hong Kong", "Korea", "Japan","Netherlands", "Ireland", "Taiwan", "Turkey")
+
+combined %>%
+ filter(grep1(paste(target, collapse="|"), country, ignore.case=TRUE)) %>%
+ select(country, year, GDP_current)%>%
+ arrange(country, year) %>%
+ head(30)
