@@ -9,7 +9,7 @@ library(lubridate)
 library(zoo)
 
 #Load data
-dataset <- read.csv("data/processed/combined_3.csv",
+dataset <- read.csv("data/processed/combined_4.csv",
                        header = TRUE,
                        check.names = FALSE)
 View(dataset)
@@ -39,7 +39,11 @@ paper_sample <- c(
 )
 #Define the custom match to handle that specific long string
 custom_names <- c("Hong Kong Special Administrative Region, People's Republic of China" = "Hong Kong")
-
+dataset <- dataset %>%
+  mutate(country = country.x) %>%
+  select(-country.x, -country.y) #two country columns creating from the merging
+dataset <- dataset %>%
+  filter(nchar(code) == 3) #removing aggregate regions
 dataset <- dataset %>%
   mutate(country_standard = countrycode(
     country, 

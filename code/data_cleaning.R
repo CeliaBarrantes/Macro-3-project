@@ -291,17 +291,13 @@ install.packages("janitor")
 library(readxl)
 library(dplyr)
 library(readr)
+library(tidyr)
 library(janitor)
 combined <- read_csv("data/processed/combined_3.csv")
 fb <- read_excel("data/raw/fb.xlsx")
 View(fb)
 names(fb)
 #we need to reshape the fb data to get it the right format (from wide to long)
-library(readxl)
-library(dplyr)
-library(tidyr)
-library(readr)
-
 fb <- fb %>%
   rename(code = country_code)
 fb_long <- fb %>%
@@ -317,7 +313,7 @@ fb_long <- fb_long %>%
 View(fb_long)
 View(combined)
 combined <- combined %>%
-  select(-any_of(c("dummy", "Dummy.x", "Dummy.y", "FCI")))
+  select(-any_of(c("dummy", "Dummy.x", "Dummy.y")))
 #we removed old crisis variables
 View(combined)
 combined_4 <- combined %>%
