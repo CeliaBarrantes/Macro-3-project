@@ -7,12 +7,14 @@ library(tidyverse)
 library(countrycode)
 library(lubridate)
 library(zoo)
+library(ggplot2)
 
 #Load data
 dataset <- read.csv("data/processed/combined_4.csv",
                        header = TRUE,
                        check.names = FALSE)
 View(dataset)
+
 #Define the time periods
 dataset <- dataset%>%
   mutate(period_replication = case_when(
@@ -145,9 +147,11 @@ data_rep <- dataset %>%
     period_replication == "1992_1996" ~ 3,
     period_replication == "1997_2003" ~ 4
   ))
-
 data_rep <- data_rep %>%
   mutate(across(everything(), ~ifelse(is.nan(.), NA, .)))
+#We keep a version of the dataset with all the years
+dataset_full <- dataset 
+View(dataset_full)
 #Drop the years outside replication period
 dataset <- dataset %>%
   filter(year >= 1982 & year <= 2003)
@@ -189,3 +193,66 @@ data_rep %>%
 sapply(data_rep, function(x) sum(is.na(x)))
 #we first get three broken variables: age dep for both young and old, fiscal balance
 #after modification, we are left with only the fiscal balance a bit broken but much less than before)
+
+#Replication of Figure 1: in Gruber and Kamin (2007)
+#1. Define the country lists
+asia_countries <- c("China", "Hong Kong", "Indonesia", "South Korea", 
+                    "Malaysia", "Philippines", "Singapore", "Taiwan", "Thailand")
+
+advanced_economies <- c("United States", "Japan", "Germany", "France", "Italy", 
+                        "United Kingdom", "Canada", "Australia", "Austria", 
+                        "Belgium", "Denmark", "Finland", "Greece", "Iceland", 
+                        "Ireland", "Netherlands", "New Zealand", "Norway", 
+                        "Portugal", "Spain", "Sweden", "Switzerland")
+
+# 2. Create the data for each line separately (to allow overlap)
+# We use the dataset_full that doesn't have the time period intervals to replicate the figure.
+us_data <- dataset_full %>%
+  filter(country_standard == "United States") %>%
+  group_by(year) %>%
+  summarise(total_ca = sum(CA, na.rm = TRUE)/1e9) %>% # Divide by 1000,000,000 because CA is very big.
+  mutate(group = "United States")
+
+asia_data <- dataset_full %>%
+  filter(country_standard %in% asia_countries) %>%
+  group_by(year) %>%
+  summarise(total_ca = sum(CA, na.rm = TRUE)/1e9) %>%
+  mutate(group = "Developing Asia")
+
+all_dev_data <- dataset_full %>%
+  filter(!(country_standard %in% advanced_economies)) %>%
+  group_by(year) %>%
+  summarise(total_ca = sum(CA, na.rm = TRUE)/1e9) %>%
+  mutate(group = "All Developing Countries")
+
+# Combine them
+plot_data <- bind_rows(us_data, asia_data, all_dev_data) %>%
+  filter(year >= 1980 & year <= 2004)
+
+# 4. Generate and save the Plot
+ggsave("output/figures/figure1_rep.png", width = 10, height = 5, dpi = 300)
+dev.new(width = 10, height = 5)
+ggplot(plot_data, aes(x = year, y = total_ca, linetype = group)) +
+  geom_line(linewidth = 1) +
+  scale_linetype_manual(values = c(
+    "United States" = "solid", 
+    "Developing Asia" = "dotted", 
+    "All Developing Countries" = "longdash"
+  )) +
+  geom_hline(yintercept = 0, color = "black") +
+  scale_x_continuous(breaks = seq(1980, 2004, 2), limits = c(1980, 2004)) +
+  scale_y_continuous(limits = c(-800, 450), breaks = seq(-800, 400, 200)) +
+  labs(
+    title = "Figure 1: Current Accounts",
+    y = "Billions USD",
+    x = NULL,
+    linetype = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.minor = element_blank(),
+    aspect.ratio = 0.5 
+  )
