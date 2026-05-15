@@ -346,7 +346,7 @@ coefs <- lapply(models, function(m) coef(summary(m)))
 print(coefs)  # check it works first
 
 # Then save as HTML
-sink("output/figures/table1.html")
+sink("output/tables/table1.html")
 for(i in seq_along(models)){
   cat(paste0("<h3>Model ", i, "</h3>"))
   print(xtable(coefs[[i]]), type = "html")
