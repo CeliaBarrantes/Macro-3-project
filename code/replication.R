@@ -256,3 +256,99 @@ ggplot(plot_data, aes(x = year, y = total_ca, linetype = group)) +
     panel.grid.minor = element_blank(),
     aspect.ratio = 0.5 
   )
+
+#Replication of Table 1
+library(plm)
+library(lmtest)
+library(sandwich)
+
+#We need panel data formatting
+data_panel <-pdata.frame(data_rep, index = c("code", "period_id"))
+
+#Model 1
+m1 <- plm(CA_to_GDP ~ rel_income + growth_dev_avg + fiscal_balance_dev + nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness + oil_balance,
+          data = data_panel, model = "within", #fixed effects
+          effect = "time") #time fixed effects only
+
+#Model 2
+data_rep <- data_rep %>%
+  mutate(
+    d_chine = ifelse(code == "CHN" & period_id == 4, 1, 0),
+    d_hk = ifelse (code == "HKG" & period_id == 4, 1, 0),
+    d_indonesia = ifelse (code == "IDN" & period_id == 4, 1, 0),
+    d_korea = ifelse (code == "KOR" & period_id == 4, 1, 0),
+    d_malaysia = ifelse (code == "MYS" & period_id == 4, 1, 0),
+    d_phil = ifelse (code == "PHL" & period_id == 4, 1, 0),
+    d_taiwan = ifelse (code == "TWN" & period_id == 4, 1, 0),
+    d_thailand = ifelse (code == "THA" & period_id == 4, 1, 0),
+    d_usa = ifelse (code == "USA" & period_id == 4, 1, 0),
+  )
+data_panel <-pdata.frame(data_rep, index = c("code", "period_id"))
+m2 <- plm(CA_to_GDP ~ rel_income + growth_dev_avg + fiscal_balance_dev + nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness + oil_balance + d_chine + d_hk + d_indonesia + d_korea + d_malaysia + d_phil + d_taiwan + d_thailand + d_usa,
+          data = data_panel, model = "within", effect = "time")
+#Model 3
+m3 <- plm(CA_to_GDP ~ rel_income + growth_dev_avg + fiscal_balance_dev + nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness + oil_balance + fc_dummy + fc_openness,
+          data = data_panel, model = "within", effect = "time")
+#Model 4
+m4 <- plm(CA_to_GDP ~ rel_income + growth_dev_avg + fiscal_balance_dev + nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness + oil_balance + fc_dummy + fc_openness + d_chine + d_hk + d_indonesia + d_korea + d_malaysia + d_phil + d_taiwan + d_thailand + d_usa,
+          data = data_panel, model = "within", effect = "time")
+#Model 5
+m5 <- plm(CA_to_GDP ~ rel_income + growth_dev_avg + fiscal_balance_dev + nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness + oil_balance + fc_dummy + fc_openness + d_usa,
+          data = data_panel, model = "within", effect = "time")
+
+#Build Table
+extract_results <- function(model){
+  coefs <- coef(summary(model))
+  data.frame(
+    variable = rownames(coefs),
+    coef = coefs[, "Estimate"],
+    tstat = coefs[, "t-value"]
+  )
+}
+#Standard errors of the regressions
+ser <- function(model){
+  sqrt(deviance(model)/model$df.residual)
+}
+summary(m1)
+#Define the row names for the table
+library(modelsummary)
+library(kableExtra)
+coef_map <- c(
+  "rel_income"          = "Per Capita GDP",
+  "growth_dev_avg"      = "ΔGrowth",
+  "fiscal_balance_dev"  = "Fiscal Balance",
+  "nfa_gdp_initial"     = "NFA",
+  "youth_dep_dev"       = "Youth Ratio",
+  "old_dep_dev"         = "Elderly Ratio",
+  "openness"            = "Openness",
+  "oil_balance"         = "Oil Balance",
+  "fc_dummy"            = "Fin. Crisis",
+  "fc_openness"         = "Fin. Crisis*Openness",
+  "d_china"             = "China(1997-2003)",
+  "d_hk"                = "Hong Kong(1997-2003)",
+  "d_indonesia"         = "Indonesia(1997-2003)",
+  "d_korea"             = "Korea(1997-2003)",
+  "d_malaysia"          = "Malaysia(1997-2003)",
+  "d_phil"              = "Phil(1997-2003)",
+  "d_taiwan"            = "Taiwan(1997-2003)",
+  "d_thailand"          = "Thailand(1997-2003)",
+  "d_us"                = "U.S.(1997-2003)"
+)
+#Formatting table
+models <- list("1" = m1, "2" = m2, "3" = m3, "4" = m4, "5" = m5)
+options(modelsummary_factory_html = "kableExtra")
+
+install.packages("xtable")
+library(xtable)
+
+# Extract coefficients manually
+coefs <- lapply(models, function(m) coef(summary(m)))
+print(coefs)  # check it works first
+
+# Then save as HTML
+sink("output/figures/table1.html")
+for(i in seq_along(models)){
+  cat(paste0("<h3>Model ", i, "</h3>"))
+  print(xtable(coefs[[i]]), type = "html")
+}
+sink()
