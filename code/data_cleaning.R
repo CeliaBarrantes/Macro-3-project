@@ -331,3 +331,102 @@ length(
   )
 ) #we get around 54 matching code names
 write_csv(combined_4, "data/processed/combined_4.csv")
+
+library(dplyr)
+library(readxl)
+
+#Constructing the FCI 
+combined_4 <- read.csv("data/processed/combined_4.csv")
+
+combined_4 <- combined_4 %>%
+select(-any_of(c("FCI", "dummy")))
+
+major <- read_excel("data/raw/SystemicMajor.xlsx")
+border <- read_excel("data/raw/SystemicBorderline.xlsx")
+
+major <- major %>%
+ rename(
+  code = `Country Code`,
+  year = Year,
+  dummy = Dummy
+ ) %>%
+ select(code, year, dummy)
+
+border <- border %>%
+ rename(
+  code = `Country Code`,
+  year = Year,
+  dummy = Dummy
+ ) %>%
+ select(code, year, dummy)
+
+crisis <- bind_rows(major, border)
+
+crisis <- crisis %>%
+ filter(code != "SGP")
+
+sample <- unique(crisis$code)
+
+fci_data <- combined_4 %>%
+  filter(code %in% sample_codes) %>%
+  left_join(crisis, by = c("code", "year"))
+
+fci_data <- fci_data %>%
+  mutate(dummy = ifelse(is.na(dummy), 0, dummy))
+
+fci_data <- fci_data %>%
+  group_by(year) %>%
+  mutate(
+    sample_GDP = sum(GDP_current, na.rm = TRUE),
+    weighted_GDP = sum(GDP_current * dummy, na.rm = TRUE),
+    weighted_GDP_ratio = weighted_GDP / sample_GDP,
+    FCI = dummy - weighted_GDP_ratio
+  ) %>%
+  ungroup()
+
+fci_final <- fci_data %>%
+  select(code, year, FCI) %>%
+  group_by(code, year) %>%
+  summarise(FCI = first(FCI), .groups = "drop")
+
+combined_4 <- combined_4 %>%
+  left_join(fci_final, by = c("code", "year"))
+
+
+##Constructing the fiscal balance ratio 
+
+sample_codes <- unique(crisis$code)
+
+fiscal_sample <- combined_4 %>%
+  filter(code %in% sample_codes) %>%
+  mutate(fiscal_balance_gdp = fiscal_balance / GDP_current) %>%
+  group_by(year) %>%
+  mutate(
+    sample_fiscal_mean = sum(fiscal_balance_gdp * GDP_current, na.rm = TRUE) /
+      sum(GDP_current[!is.na(fiscal_balance_gdp)], na.rm = TRUE),
+    fiscal_balance_dev = fiscal_balance_gdp - sample_fiscal_mean
+  ) %>%
+  ungroup() %>%
+  select(code, year, fiscal_balance_gdp, fiscal_balance_dev)
+
+combined_4 <- combined_4 %>%
+  left_join(fiscal_sample, by = c("code", "year"))
+
+write.csv(combined_4, "data/processed/combined_4.csv", row.names = FALSE)
+
+##Converting the NFA from LCU to USD
+sample_codes <- unique(crisis$code)
+nfa_sample <- combined_4 %>%
+  filter(code %in% sample_codes) %>%
+  select(code, year, NFA, Exchange_rate, GDP_current) %>%
+  distinct(code, year, .keep_all = TRUE) %>%
+  mutate(
+    NFA_usd = NFA / Exchange_rate,
+    nfa_gdp = NFA_usd / GDP_current
+  ) %>%
+  select(code, year, NFA_usd, nfa_gdp)
+
+combined_4 <- combined_4 %>%
+  left_join(nfa_sample, by = c("code", "year"))
+
+write.csv(combined_4, "data/processed/combined_4.csv", row.names = FALSE)
