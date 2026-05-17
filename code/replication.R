@@ -59,79 +59,70 @@ dataset <- dataset %>%
     TRUE ~ country_standard
   ))
 dataset <- dataset %>%
-  filter(country_standard %in% paper_sample)
+  filter(country_standard %in% paper_sample) %>%
+  filter(country_standard != "Singapore")
 missing_countries <- setdiff(paper_sample, unique(dataset$country_standard))
 print(missing_countries)
 
 ### DEFINE VARIABLES OF THE PAPER
 #Relative income wrt to average global GDP
+
 dataset <- dataset %>%
-    group_by(year)%>%
-    mutate(mean_gdppc = mean(GDP_pc_const, na.rm = TRUE),
-            rel_income_raw = GDP_pc_const / mean_gdppc) %>%
-    ungroup()%>%
+  group_by(year) %>%
+  mutate(
+    mean_gdppc = mean(GDP_pc_const, na.rm = TRUE),
+    rel_income_raw = GDP_pc_const / mean_gdppc
+  ) %>%
+  ungroup() %>%
   arrange(code, year) %>%
   group_by(code) %>%
-  mutate(growth_pc = log(GDP_pc_const) - log(lag(GDP_pc_const))) %>%
-  ungroup()%>%
+  mutate(
+    growth_pc = log(GDP_pc_const) - log(lag(GDP_pc_const)),
+    nfa_gdp_lagged = lag(nfa_gdp)
+  ) %>%
+  ungroup() %>%
   group_by(year) %>%
-mutate(
+  mutate(
     weighted_mean_growth = weighted.mean(
       growth_pc[!is.na(growth_pc) & !is.na(GDP_current)],
       GDP_current[!is.na(growth_pc) & !is.na(GDP_current)]
-    ),
-
-    world_fiscal_mean = weighted.mean(
-      fiscal_balance[!is.na(fiscal_balance) & !is.na(GDP_current)],
-      GDP_current[!is.na(fiscal_balance) & !is.na(GDP_current)]
     )
-) %>% #we use a safer version of weighted.mean()
-#to avoid issue in the treatment of NAs
+  ) %>%
   ungroup() %>%
   mutate(
     growth_dev = growth_pc - weighted_mean_growth,
-    fiscal_dev = fiscal_balance - world_fiscal_mean,
-    ca_gdp = CA / GDP_current
-    )%>%
-group_by(code)%>%
-arrange(code, year)%>%
-mutate(
-    nfa_gdp_lagged = lag(nfa_gdp),
+    ca_gdp = CA / GDP_current,
     openness_raw = (Exports + Imports) / GDP_current,
     fc_openness_raw = FCI * openness_raw,
     fc_openness_raw = replace_na(fc_openness_raw, 0)
-)%>%
-ungroup()%>%
-group_by(year)%>%
-mutate(
-
+  ) %>%
+  group_by(year) %>%
+  mutate(
     world_youth_mean = weighted.mean(
       Age_dep_young[!is.na(Age_dep_young) & !is.na(GDP_current)],
       GDP_current[!is.na(Age_dep_young) & !is.na(GDP_current)]
     ),
-
     world_old_mean = weighted.mean(
       Age_dep_old[!is.na(Age_dep_old) & !is.na(GDP_current)],
       GDP_current[!is.na(Age_dep_old) & !is.na(GDP_current)]
     )
-)%>%
-ungroup()%>%
-mutate(
+  ) %>%
+  ungroup() %>%
+  mutate(
     youth_dev = Age_dep_young - world_youth_mean,
     old_dev = Age_dep_old - world_old_mean
-)%>%
-ungroup()
+  )
 
 #Adapt to time periods
 data_rep <- dataset %>%
   filter(!is.na(period_replication)) %>%
   group_by(code, period_replication) %>%
   summarise(
-    growth_dev_avg = mean(growth_dev, na.rm = TRUE), #Change in growth rate of real income
-    CA_to_GDP = mean(ca_gdp, na.rm = TRUE), #CA to GDP ratio
-    rel_income = mean(rel_income_raw, na.rm = TRUE),#Real income
-    fiscal_balance_dev = mean(fiscal_dev, na.rm = TRUE), #Fiscal balance deviation
-    nfa_gdp_initial = first(na.omit(nfa_gdp_lagged)), #we take the first lagged value found in the period
+    growth_dev_avg = mean(growth_dev, na.rm = TRUE),
+    CA_to_GDP = mean(ca_gdp, na.rm = TRUE),
+    rel_income = mean(rel_income_raw, na.rm = TRUE),
+    fiscal_balance_dev = mean(fiscal_balance_dev, na.rm = TRUE),
+    nfa_gdp_initial = first(na.omit(nfa_gdp_lagged)),
     youth_dep_dev = mean(youth_dev, na.rm = TRUE),
     old_dep_dev = mean(old_dev, na.rm = TRUE),
     openness = mean(openness_raw, na.rm = TRUE),
@@ -139,13 +130,15 @@ data_rep <- dataset %>%
     fc_dummy = mean(FCI, na.rm = TRUE),
     fc_openness = mean(fc_openness_raw, na.rm = TRUE),
     .groups = "drop"
-  )%>%
-  mutate(period_id = case_when(
-    period_replication == "1982_1986" ~ 1,
-    period_replication == "1987_1991" ~ 2,
-    period_replication == "1992_1996" ~ 3,
-    period_replication == "1997_2003" ~ 4
-  ))
+  ) %>%
+  mutate(
+    period_id = case_when(
+      period_replication == "1982_1986" ~ 1,
+      period_replication == "1987_1991" ~ 2,
+      period_replication == "1992_1996" ~ 3,
+      period_replication == "1997_2003" ~ 4
+    )
+  )
 data_rep <- data_rep %>%
   mutate(across(everything(), ~ifelse(is.nan(.), NA, .)))
 #We keep a version of the dataset with all the years
@@ -266,6 +259,7 @@ library(dplyr)
 library(modelsummary)
 library(kableExtra)
 library(xtable)
+library(plm)
 
 ##Dummies for 1997-2003
 data_rep <- data_rep %>%
@@ -287,45 +281,45 @@ data_rep <- data_rep %>%
     fc_openness = fc_dummy * openness
   )
 
-m1 <- lm(
+m1 <- plm(
   CA_to_GDP ~ rel_income + growth_dev_avg + fiscal_balance_dev +
-    nfa_gdp + youth_dep_dev + old_dep_dev + openness + oil_balance +
-    factor(period_id),
+    nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness + oil_balance +
+    factor(period_id), model = "pooling",
   data = data_rep
 )
 
-m2 <- lm(
+m2 <- plm(
   CA_to_GDP ~ rel_income + growth_dev_avg + fiscal_balance_dev +
-    nfa_gdp + youth_dep_dev + old_dep_dev + openness + oil_balance +
+    nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness + oil_balance +
     d_china + d_hk + d_indonesia + d_korea + d_malaysia +
     d_phil + d_taiwan + d_thailand + d_usa +
-    factor(period_id),
+    factor(period_id), model = "pooling",
   data = data_rep
 )
 
-m3 <- lm(
+m3 <- plm(
   CA_to_GDP ~ rel_income + growth_dev_avg + fiscal_balance_dev +
-    nfa_gdp + youth_dep_dev + old_dep_dev + openness + oil_balance +
+    nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness + oil_balance +
     fc_dummy + fc_openness +
-    factor(period_id),
+    factor(period_id), model = "pooling",
   data = data_rep
 )
 
-m4 <- lm(
+m4 <- plm(
   CA_to_GDP ~ rel_income + growth_dev_avg + fiscal_balance_dev +
-    nfa_gdp + youth_dep_dev + old_dep_dev + openness + oil_balance +
+    nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness + oil_balance +
     fc_dummy + fc_openness +
     d_china + d_hk + d_indonesia + d_korea + d_malaysia +
     d_phil + d_taiwan + d_thailand + d_usa +
-    factor(period_id),
+    factor(period_id), model = "pooling",
   data = data_rep
 )
 
-m5 <- lm(
+m5 <- plm(
   CA_to_GDP ~ rel_income + growth_dev_avg + fiscal_balance_dev +
-    nfa_gdp + youth_dep_dev + old_dep_dev + openness + oil_balance +
+    nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness + oil_balance +
     fc_dummy + fc_openness + d_usa +
-    factor(period_id),
+    factor(period_id), model = "pooling",
   data = data_rep
 )
 
@@ -341,3 +335,4 @@ for (i in seq_along(models)) {
 }
 
 sink()
+

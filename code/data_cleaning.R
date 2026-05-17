@@ -430,3 +430,4 @@ combined_4 <- combined_4 %>%
   left_join(nfa_sample, by = c("code", "year"))
 
 write.csv(combined_4, "data/processed/combined_4.csv", row.names = FALSE)
+View(combined_4)
