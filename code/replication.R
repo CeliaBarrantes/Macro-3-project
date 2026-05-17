@@ -96,7 +96,6 @@ mutate(
 group_by(code)%>%
 arrange(code, year)%>%
 mutate(
-    nfa_gdp = NFA/GDP_current,
     nfa_gdp_lagged = lag(nfa_gdp),
     openness_raw = (Exports + Imports) / GDP_current,
     fc_openness_raw = FCI * openness_raw,
