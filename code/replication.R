@@ -78,7 +78,7 @@ dataset <- dataset %>%
   group_by(code) %>%
   mutate(
     growth_pc = log(GDP_pc_const) - log(lag(GDP_pc_const)),
-    nfa_gdp_lagged = lag(nfa_gdp)
+    nfa_gdp_lagged = lag(nfa_gdp_lmf)
   ) %>%
   ungroup() %>%
   group_by(year) %>%
@@ -158,7 +158,8 @@ data_quality_table <- data_rep %>%
     missing_CA = sum(is.na(CA_to_GDP)),
     missing_Growth_Change = sum(is.na(growth_dev_avg)),
     missing_NFA = sum(is.na(nfa_gdp_initial)),
-    missing_Oil = sum(is.na(oil_balance))
+    missing_Oil = sum(is.na(oil_balance)),
+    missing_fb = sum(is.na(fiscal_balance_dev))
   )
 View(data_quality_table)
 print(data_quality_table)
@@ -181,8 +182,53 @@ data_rep %>%
         fc_openness
       )
     )
-  )#we get 0 complete observations (without the later modifications)
+  )#we get 16 complete observations (without the later modifications)
 sapply(data_rep, function(x) sum(is.na(x)))
+# See which variables are causing incomplete cases
+data_rep %>%
+  summarise(across(c(CA_to_GDP, rel_income, growth_dev_avg, fiscal_balance_dev,
+                     nfa_gdp_initial, youth_dep_dev, old_dep_dev,
+                     openness, oil_balance, fc_dummy, fc_openness),
+                   ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "n_missing") %>%
+  arrange(desc(n_missing)) #most missing values are in financial dummy, then fiscal balance, and then nfa
+
+data_rep <- data_rep %>%
+ mutate(fc_dummy = replace_na(fc_dummy, 0))
+
+dataset %>%
+  filter(year >= 1982 & year <= 2003) %>%
+  summarise(
+    n_nfa         = sum(!is.na(NFA)),
+    n_exchange    = sum(!is.na(Exchange_rate)),
+    n_nfa_gdp     = sum(!is.na(nfa_gdp))
+  )
+dataset %>%
+  filter(year >= 1982 & year <= 2003) %>%
+  mutate(
+    has_nfa      = !is.na(NFA),
+    has_er       = !is.na(Exchange_rate),
+    has_nfa_gdp  = !is.na(nfa_gdp)
+  ) %>%
+  group_by(code) %>%
+  summarise(
+    n_nfa     = sum(has_nfa),
+    n_er      = sum(has_er),
+    n_nfa_gdp = sum(has_nfa_gdp)
+  ) %>%
+  filter(n_nfa > 0 & n_nfa_gdp == 0) %>%  # has NFA but conversion failed
+  print(n = 40)
+#We changed NFA from the Lane-Milesi dataset, and fixed all coverage issues.
+# Check how many complete observations you have now
+data_rep %>%
+  summarise(
+    total_obs    = n(),
+    complete_obs = sum(complete.cases(
+      CA_to_GDP, rel_income, growth_dev_avg, fiscal_balance_dev,
+      nfa_gdp_initial, youth_dep_dev, old_dep_dev,
+      openness, oil_balance, fc_dummy
+    ))
+  )
 #we first get three broken variables: age dep for both young and old, fiscal balance
 #after modification, we are left with only the fiscal balance a bit broken but much less than before)
 

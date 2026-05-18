@@ -286,7 +286,7 @@ summary(combined$oil_balance_gdp)
 view(combined)
 write.csv(combined, "data/processed/combined_2.csv", row.names = FALSE)
 
-#adding the financial crisis dummy to the data by countrycode
+#adding the fiscal balance to the data by countrycode
 install.packages("janitor")
 library(readxl)
 library(dplyr)
@@ -294,42 +294,48 @@ library(readr)
 library(tidyr)
 library(janitor)
 combined <- read_csv("data/processed/combined_3.csv")
-fb <- read_excel("data/raw/fb.xlsx")
-View(fb)
-names(fb)
+fb_weo <- read_excel("data/raw/WEO_Data.xlsx")
+View(fb_weo)
+names(fb_weo)
+#the data has many missing observations, so we use the WEO for the fiscal balance variable
 #we need to reshape the fb data to get it the right format (from wide to long)
-fb <- fb %>%
-  rename(code = country_code)
-fb_long <- fb %>%
+fb_weo <- fb_weo %>%
+  rename(code = ISO)
+fb_weo_long <- fb_weo %>%
+  filter(`WEO Subject Code` == "GGXCNL_NGDP") %>%
+  select(code, matches("^[0-9]+$")) %>%
   pivot_longer(
-    cols = starts_with("x"),
+    cols = -code,
     names_to = "year",
-    values_to = "dummy"
-  )
-fb_long <- fb_long %>%
+    values_to = "fiscal_balance"
+  )%>%
   mutate(
-    year = as.numeric(gsub("x", "", year))
-  ) #we clean the year format (remove the x in front)
-View(fb_long)
-View(combined)
+    year = as.numeric(year),
+    fiscal_balance = suppressWarnings(as.numeric(fiscal_balance))
+  )
+View(fb_weo_long)
+fb_weo_long <- fb_weo_long %>%
+  left_join(
+    combined %>% select(code, year, GDP_current) %>% distinct(code, year, .keep_all = TRUE),
+    by = c("code", "year")
+  )
 combined <- combined %>%
-  select(-any_of(c("dummy", "Dummy.x", "Dummy.y")))
-#we removed old crisis variables
+  select(-any_of("fiscal_balance"))
 View(combined)
 combined_4 <- combined %>%
   left_join(
-    fb_long,
+    fb_weo_long,
     by = c("code", "year")
   ) #we merge by country code
 View(combined_4)
-summary(combined_4$dummy)
-sum(is.na(combined_4$dummy))
+summary(combined_4$fiscal_balance)
+sum(is.na(combined_4$fiscal_balance))
 length(
   intersect(
     unique(combined$code),
-    unique(fb_long$code)
+    unique(fb_weo_long$code)
   )
-) #we get around 54 matching code names
+) #we get around 61 matching code names
 write_csv(combined_4, "data/processed/combined_4.csv")
 
 library(dplyr)
@@ -388,6 +394,9 @@ fci_final <- fci_data %>%
   select(code, year, FCI) %>%
   group_by(code, year) %>%
   summarise(FCI = first(FCI), .groups = "drop")
+View(fci_final)
+fci_final <- fci_final %>%
+  mutate(FCI = replace_na(FCI, 0)) #to ensure that all na are set to 0
 
 combined_4 <- combined_4 %>%
   left_join(fci_final, by = c("code", "year"))
@@ -397,22 +406,27 @@ combined_4 <- combined_4 %>%
 
 sample_codes <- unique(crisis$code)
 
-fiscal_sample <- combined_4 %>%
+fiscal_sample <- fb_weo_long %>% #Fiscal balance is percentage of GDP
   filter(code %in% sample_codes) %>%
-  mutate(fiscal_balance_gdp = fiscal_balance / GDP_current) %>%
   group_by(year) %>%
   mutate(
-    sample_fiscal_mean = sum(fiscal_balance_gdp * GDP_current, na.rm = TRUE) /
-      sum(GDP_current[!is.na(fiscal_balance_gdp)], na.rm = TRUE),
-    fiscal_balance_dev = fiscal_balance_gdp - sample_fiscal_mean
+    sample_fiscal_mean = sum(fiscal_balance * GDP_current, na.rm = TRUE) /
+      sum(GDP_current[!is.na(fiscal_balance)], na.rm = TRUE),
+    fiscal_balance_dev = fiscal_balance - sample_fiscal_mean
   ) %>%
   ungroup() %>%
-  select(code, year, fiscal_balance_gdp, fiscal_balance_dev)
-
+  select(code, year, fiscal_balance, fiscal_balance_dev)
+combined_4 <- combined %>%
+  left_join(
+    fb_weo_long %>% select(-GDP_current),
+    by = c("code", "year")
+  )
 combined_4 <- combined_4 %>%
+  select(-any_of(c("fiscal_balance", "fiscal_balance_dev"))) %>%
   left_join(fiscal_sample, by = c("code", "year"))
 
 write.csv(combined_4, "data/processed/combined_4.csv", row.names = FALSE)
+View(combined_4)
 
 ##Converting the NFA from LCU to USD
 sample_codes <- unique(crisis$code)
@@ -431,3 +445,76 @@ combined_4 <- combined_4 %>%
 
 write.csv(combined_4, "data/processed/combined_4.csv", row.names = FALSE)
 View(combined_4)
+
+
+#NFA data from Lane and Milesi-Ferretti
+lmf <- read_excel("data/raw/lane_milesi_data.xlsx", sheet = "Dataset")
+nfa_lmf <- lmf %>%
+  rename(
+    country = Country,
+    year = Year,
+    nfa_us_lmf = `Net IIP excl gold` #NFA in million current USD
+  ) %>%
+  mutate(
+    code = countrycode(country, origin = "country.name", destination = "iso3c",
+    custom_match = c("Korea, Republic of" = "KOR",
+                      "Taiwan Province of China" = "TWN",
+                      "Hong Kong SAR, China" = "HKG"))
+  )%>%
+  select(code, country, year, nfa_us_lmf)
+
+nfa_lmf <- nfa_lmf %>%
+  left_join(
+    combined_4 %>% select(code, year, GDP_current) %>% distinct(code, year, .keep_all = TRUE),
+    by = c("code", "year")
+  )%>%
+  mutate(nfa_gdp_lmf = nfa_us_lmf / GDP_current)
+
+nfa_lmf %>%
+  filter(year >= 1982 & year <= 2003) %>%
+  summarise(
+    n_countries  = n_distinct(code),
+    n_nfa        = sum(!is.na(nfa_us_lmf)),
+    n_nfa_gdp_lmf    = sum(!is.na(nfa_gdp_lmf))
+  )
+View(nfa_lmf)
+nfa_lmf %>%
+  filter(is.na(code)) %>%
+  distinct(country) %>%
+  print(n = 50)
+paper_codes <- c("ARG","AUS","AUT","BHR","BGD","BEL","BOL","BRA","CAN","CHL",
+                 "CHN","COL","CRI","CYP","DNK","DOM","EGY","SLV","FIN","FRA",
+                 "DEU","GRC","GTM","HTI","HND","HKG","ISL","IND","IDN","IRL",
+                 "ISR","ITA","JPN","JOR","KOR","MYS","MEX","NLD","NZL","NOR",
+                 "OMN","PAK","PAN","PRY","PER","PHL","PRT","SGP","ZAF","ESP",
+                 "LKA","SWE","CHE","SYR","TWN","THA","TUR","GBR","USA","VEN")
+
+setdiff(paper_codes, unique(nfa_lmf$code)) #all countries in the paper are covered in the lmf data
+
+combined_4 <- read_csv("data/processed/combined_4.csv")
+nfa_lmf <- nfa_lmf %>%
+  select(-any_of("GDP_current"))%>%
+  filter(code %in% paper_codes, year >= 1981 & year <= 2003) %>%
+  left_join(
+    combined_4 %>%
+      select(code, year, GDP_current) %>%
+      distinct(code, year, .keep_all = TRUE),
+    by = c("code", "year")
+  ) %>%
+  mutate(nfa_gdp_lmf = (nfa_us_lmf * 1e6) / GDP_current)
+
+  nfa_lmf %>%
+  filter(year >= 1982 & year <= 2003) %>%
+  summarise(
+    n_countries = n_distinct(code),
+    n_nfa       = sum(!is.na(nfa_us_lmf)),
+    n_nfa_gdp   = sum(!is.na(nfa_gdp_lmf))
+  )
+  combined_4 <- combined_4 %>%
+  select(-any_of(c("NFA_usd", "nfa_gdp", "nfa_gdp_lmf"))) %>%
+  left_join(
+    nfa_lmf %>% select(code, year, nfa_gdp_lmf),
+    by = c("code", "year")
+  )
+
+write_csv(combined_4, "data/processed/combined_4.csv")
