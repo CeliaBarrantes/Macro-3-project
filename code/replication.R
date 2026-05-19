@@ -182,7 +182,7 @@ data_rep %>%
         fc_openness
       )
     )
-  )#we get 16 complete observations (without the later modifications)
+  )#we get 19 complete observations (with the lastest modification)
 sapply(data_rep, function(x) sum(is.na(x)))
 # See which variables are causing incomplete cases
 data_rep %>%
@@ -231,6 +231,27 @@ data_rep %>%
   )
 #we first get three broken variables: age dep for both young and old, fiscal balance
 #after modification, we are left with only the fiscal balance a bit broken but much less than before)
+data_rep %>%
+  summarise(
+    complete_obs = sum(
+      complete.cases(
+        CA_to_GDP,
+        rel_income,
+        growth_dev_avg,
+        nfa_gdp_initial,
+        youth_dep_dev,
+        old_dep_dev,
+        openness,
+        fc_dummy
+      )
+    )
+  ) 
+  #without the fiscal balance and the oil balance, we get 
+  #193 complete observations which is closer to the 
+  #number of observations of the paper
+  #the fiscal balance drops the obs from 193 to 83, and
+  #then the oil balance drops it from 83 to 64
+  #But this issue is typical from historical macroeconomic replications
 
 #Replication of Figure 1: in Gruber and Kamin (2007)
 #1. Define the country lists
@@ -381,4 +402,4 @@ for (i in seq_along(models)) {
 }
 
 sink()
-
+modelsummary(models)
