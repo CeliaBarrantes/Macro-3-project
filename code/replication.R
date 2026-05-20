@@ -352,7 +352,8 @@ m1 <- plm(
   CA_to_GDP ~ rel_income + growth_dev_avg + fiscal_balance_dev +
     nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness + oil_balance +
     factor(period_id), model = "pooling",
-  data = data_rep
+  data = data_rep,
+  index = c("code", "period_id") #to specify the panel structure
 )
 
 m2 <- plm(
@@ -361,8 +362,64 @@ m2 <- plm(
     d_china + d_hk + d_indonesia + d_korea + d_malaysia +
     d_phil + d_taiwan + d_thailand + d_usa +
     factor(period_id), model = "pooling",
-  data = data_rep
+  data = data_rep,
+  index = c("code", "period_id")
 )
+
+modelsummary(
+  list(
+    "Model 1"= m1,
+    "Model 2"= m2
+  ),
+  fmt=3,
+  stars = TRUE,
+  statistic = "std.error",
+  output = "markdown"
+)
+#With robust standard errors (because of the small sample size)
+library(sandwich)
+modelsummary(
+  list(
+    "Model 1"= m1,
+    "Model 2"= m2
+  ),
+  vcov = "HC1",
+  fmt=3,
+  stars = TRUE,
+  statistic = "std.error",
+  output = "markdown"
+)
+#We don't notice major changes which means our inference
+#is not so much plagued with severe heteroskedasticy
+#and our coefficients are relatively stable
+
+#We try with a broader-sample size (193):
+m1_large <- plm(
+  CA_to_GDP ~ rel_income + growth_dev_avg +
+    nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness +
+    factor(period_id), model = "pooling",
+  data = data_rep,
+  index = c("code", "period_id") 
+  )
+
+modelsummary(
+  list(
+    "Model 1 large"= m1_large
+  ),
+  fmt=3,
+  stars = TRUE,
+  statistic = "std.error",
+  output = "markdown"
+)
+#decline in the explanatory power of the model both because
+#of broader sample (noisier) and less explanatory variables
+#suggest that part of the strong fit in the restricted sample
+#is driven by a subset of countries strongly affected
+#by the Asian crisis and oil-export dynamics
+#confirms one of the core paper's idea: global CA imbalances
+#are driven by specific groups of countries: Asian crisis economices,
+#oil exporters, the US
+
 
 m3 <- plm(
   CA_to_GDP ~ rel_income + growth_dev_avg + fiscal_balance_dev +
