@@ -426,6 +426,7 @@ m3 <- plm(
     nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness + oil_balance +
     fc_dummy + fc_openness +
     factor(period_id), model = "pooling",
+    index = c("code", "period_id"),
   data = data_rep
 )
 
@@ -436,6 +437,7 @@ m4 <- plm(
     d_china + d_hk + d_indonesia + d_korea + d_malaysia +
     d_phil + d_taiwan + d_thailand + d_usa +
     factor(period_id), model = "pooling",
+    index = c("code", "period_id"),
   data = data_rep
 )
 
@@ -444,8 +446,61 @@ m5 <- plm(
     nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness + oil_balance +
     fc_dummy + fc_openness + d_usa +
     factor(period_id), model = "pooling",
+    index = c("code", "period_id"),
   data = data_rep
 )
+modelsummary(
+  list(
+    "Model 3"= m3,
+    "Model 4"= m4,
+    "Model 5"= m5
+  ),
+  fmt=3,
+  stars = TRUE,
+  statistic = "std.error",
+  output = "markdown"
+)
+#We try to replicate columns 3,4 and 5 with the broader sample
+m3_large <- plm(
+  CA_to_GDP ~ rel_income + growth_dev_avg  +
+    nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness  +
+    fc_dummy + fc_openness +
+    factor(period_id), model = "pooling",
+    index = c("code", "period_id"),
+  data = data_rep
+)
+
+m4_large <- plm(
+  CA_to_GDP ~ rel_income + growth_dev_avg  +
+    nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness +
+    fc_dummy + fc_openness +
+    d_china + d_hk + d_indonesia + d_korea + d_malaysia +
+    d_phil + d_taiwan + d_thailand + d_usa +
+    factor(period_id), model = "pooling",
+    index = c("code", "period_id"),
+  data = data_rep
+)
+
+m5_large <- plm(
+  CA_to_GDP ~ rel_income + growth_dev_avg  +
+    nfa_gdp_initial + youth_dep_dev + old_dep_dev + openness +
+    fc_dummy + fc_openness + d_usa +
+    factor(period_id), model = "pooling",
+    index = c("code", "period_id"),
+  data = data_rep
+)
+modelsummary(
+  list(
+    "Model 3 l"= m3_large,
+    "Model 4 l"= m4_large,
+    "Model 5 l"= m5_large
+  ),
+  fmt=3,
+  stars = TRUE,
+  statistic = "std.error",
+  output = "markdown"
+)
+
 
 models <- list("1" = m1, "2" = m2, "3" = m3, "4" = m4, "5" = m5)
 
